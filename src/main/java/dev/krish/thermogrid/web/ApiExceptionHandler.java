@@ -1,5 +1,6 @@
 package dev.krish.thermogrid.web;
 
+import dev.krish.thermogrid.service.RegionNotFoundException;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.ConstraintViolationException;
 import jakarta.validation.Path;
@@ -35,6 +36,12 @@ public class ApiExceptionHandler {
             .sorted()
             .collect(Collectors.joining("; "));
         return ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, detail);
+    }
+
+    /** e.g. {@code /api/v1/regions/99/vulnerabilities}. */
+    @ExceptionHandler(RegionNotFoundException.class)
+    ProblemDetail regionNotFound(RegionNotFoundException ex) {
+        return ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, ex.getMessage());
     }
 
     /** The violation path is "method.param"; clients only care about the param. */

@@ -51,7 +51,7 @@ curl "localhost:8080/api/v1/infrastructure/vulnerabilities?minRiskLevel=SEVERE"
 
 Interactive docs are at [localhost:8080/swagger-ui.html](http://localhost:8080/swagger-ui.html), and the OpenAPI spec is at `/v3/api-docs`.
 
-Run the tests with `./mvnw verify` (36 tests: classifier, service, repository, controller slice, end to end and API docs).
+Run the tests with `./mvnw verify` (53 tests: classifier, service, repository, controller slices, end to end and API docs).
 
 ### With Docker
 
@@ -64,14 +64,46 @@ docker run --rm -p 8080:8080 thermogrid
 
 ## API
 
-`GET /api/v1/infrastructure/vulnerabilities`
+| Endpoint | Returns |
+|---|---|
+| `GET /api/v1/infrastructure/vulnerabilities` | Every region |
+| `GET /api/v1/regions/{id}/vulnerabilities` | One region. An unknown id returns 404; a known region with no matches returns `200 []`. |
+
+Both take the same optional parameters:
 
 | Parameter | Type | Notes |
 |---|---|---|
-| `targetYear` | integer, 2000–2100 | Optional. Out of range returns 400. A year with no data returns `200 []`, because an empty result is a valid answer. |
-| `minRiskLevel` | `LOW` \| `MODERATE` \| `HIGH` \| `CRITICAL` | Optional. Returns that level and above. Case-sensitive. |
+| `targetYear` | integer, 2000–2100 | Out of range returns 400. A year with no data returns `200 []`, because an empty result is a valid answer. |
+| `minRiskLevel` | `LOW` \| `MODERATE` \| `HIGH` \| `CRITICAL` | Returns that level and above. Case-sensitive. |
+| `heatOffset` | number, −10 to 10 | What-if scenario: degrees added to every projected heat index before the model runs. `projectedHeatIndex` in the response includes it. |
 
 Results are sorted by deficit, largest first. Errors are [RFC 7807](https://www.rfc-editor.org/rfc/rfc7807) `application/problem+json`.
+
+### What if it runs 3 degrees hotter?
+
+As seeded, only Edmonton is HIGH or worse in 2028. Add three degrees and Calgary joins it:
+
+```bash
+curl "localhost:8080/api/v1/infrastructure/vulnerabilities?targetYear=2028&minRiskLevel=HIGH&heatOffset=3"
+```
+
+```json
+[{"region":"Edmonton","targetYear":2028,"projectedHeatIndex":41.0,"deficitMw":194.5,"utilizationPercent":114.6,"riskLevel":"HIGH"},
+ {"region":"Calgary","targetYear":2028,"projectedHeatIndex":40.0,"deficitMw":155.0,"utilizationPercent":109.3,"riskLevel":"HIGH"}]
+```
+
+### One region
+
+```bash
+curl "localhost:8080/api/v1/regions/2/vulnerabilities"
+```
+
+```json
+[{"region":"Calgary","targetYear":2035,"projectedHeatIndex":41.0,"deficitMw":215.5,"utilizationPercent":113.1,"riskLevel":"HIGH"},
+ {"region":"Calgary","targetYear":2028,"projectedHeatIndex":37.0,"deficitMw":0.0,"utilizationPercent":98.5,"riskLevel":"MODERATE"}]
+```
+
+Region ids in the seed data: 1 Edmonton, 2 Calgary, 3 Red Deer, 4 Lethbridge, 5 Fort McMurray.
 
 ## Architecture
 
@@ -79,13 +111,15 @@ Strict N-tier: dependencies point down only. The controller never touches a repo
 
 ```mermaid
 flowchart TD
-    Client([HTTP client]) -->|query params| C[VulnerabilityController<br/><i>web</i>]
+    Client([HTTP client]) -->|query params| C[VulnerabilityController<br/>RegionVulnerabilityController<br/><i>web</i>]
     C -->|VulnerabilityQuery| SI{{VulnerabilityService<br/><i>interface</i>}}
     SI -.implemented by.- S[HeatVulnerabilityService<br/><i>service</i>]
     S --> RC{{RiskClassifier<br/><i>strategy</i>}}
     S --> P[GridStressProperties<br/><i>config</i>]
     S -->|findProjected| R[HeatwaveEventRepository<br/><i>repository</i>]
+    S -->|existsById| RR[RegionRepository<br/><i>repository</i>]
     R -->|join fetch| DB[(H2<br/>regions · heatwave_events)]
+    RR --> DB
     R -. "HeatwaveEvent + Region (entities)" .-> S
     S -. "VulnerabilityAssessment (domain)" .-> C
     C -->|VulnerabilityMapper| M["VulnerabilityResponse (DTO)"]
@@ -158,4 +192,4 @@ Red Deer and Fort McMurray come out LOW in both years. The 2026 Edmonton row is 
 - Replace the per-capita constant with hourly load curves, and derate per region by equipment type.
 - Load real climate projections through a separate ingestion module.
 - Cache assessments (the inputs are static) and paginate the endpoint.
-- Make risk thresholds data-driven; add a per-region drill-down, and PostgreSQL via Docker Compose.
+- Make risk thresholds data-driven, and add PostgreSQL via Docker Compose.
