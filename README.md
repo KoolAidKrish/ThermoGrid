@@ -4,7 +4,7 @@
 
 A read-only Spring Boot service that answers one question: **which regions run out of power under projected heatwaves?**
 
-**Stack:** Java 21 · Spring Boot 3.5 · Spring Data JPA · H2 · springdoc-openapi · JUnit 5 + Mockito · Maven · Docker
+**Stack:** Java 21 · Spring Boot 3.5 · Spring Data JPA · Flyway · H2 or PostgreSQL · springdoc-openapi · JUnit 5 + Mockito + Testcontainers · Maven · Docker Compose
 
 ```bash
 curl "localhost:8080/api/v1/infrastructure/vulnerabilities?targetYear=2035&minRiskLevel=CRITICAL"
@@ -31,7 +31,7 @@ Requires JDK 21 or newer. Maven is not needed; the wrapper downloads it.
 ./mvnw spring-boot:run          # Windows: mvnw.cmd spring-boot:run
 ```
 
-The API starts on port 8080 (`--server.port=8081` if that port is taken). The database is in-memory and reseeded on every start.
+The API starts on port 8080 (`--server.port=8081` if that port is taken). By default it uses an in-memory H2 database, migrated and seeded by Flyway on every start, so nothing else needs to be installed.
 
 ```bash
 curl "localhost:8080/api/v1/infrastructure/vulnerabilities?targetYear=2028&minRiskLevel=HIGH"
@@ -51,11 +51,19 @@ curl "localhost:8080/api/v1/infrastructure/vulnerabilities?minRiskLevel=SEVERE"
 
 Interactive docs are at [localhost:8080/swagger-ui.html](http://localhost:8080/swagger-ui.html), and the OpenAPI spec is at `/v3/api-docs`.
 
-Run the tests with `./mvnw verify` (53 tests: classifier, service, repository, controller slices, end to end and API docs).
+Run the tests with `./mvnw verify`: 64 tests covering the classifier, service, repository, controller slices, API docs, and end to end. The end-to-end suite runs twice, once on H2 and once on real PostgreSQL through [Testcontainers](https://testcontainers.com). The PostgreSQL run is skipped, not failed, on machines without Docker.
 
-### With Docker
+### With PostgreSQL (Docker Compose)
 
-No JDK needed. The multi-stage build compiles with the JDK and ships a JRE-only image that runs as a non-root user.
+No JDK needed. This builds the app image and starts it next to PostgreSQL 17. The same Flyway migrations create and seed the schema.
+
+```bash
+docker compose up --build
+```
+
+Data persists in a Docker volume between runs; `docker compose down -v` resets it. To run the app outside Docker against any PostgreSQL, the switch is one setting: `SPRING_PROFILES_ACTIVE=postgres`, with `DB_URL`, `DB_USER` and `DB_PASSWORD` if the defaults in `application-postgres.properties` don't fit.
+
+To run just the app image on H2:
 
 ```bash
 docker build -t thermogrid .
@@ -118,7 +126,7 @@ flowchart TD
     S --> P[GridStressProperties<br/><i>config</i>]
     S -->|findProjected| R[HeatwaveEventRepository<br/><i>repository</i>]
     S -->|existsById| RR[RegionRepository<br/><i>repository</i>]
-    R -->|join fetch| DB[(H2<br/>regions · heatwave_events)]
+    R -->|join fetch| DB[(H2 or PostgreSQL<br/>regions · heatwave_events<br/><i>schema by Flyway</i>)]
     RR --> DB
     R -. "HeatwaveEvent + Region (entities)" .-> S
     S -. "VulnerabilityAssessment (domain)" .-> C
@@ -179,7 +187,9 @@ Red Deer and Fort McMurray come out LOW in both years. The 2026 Edmonton row is 
 - **Config-driven constants.** No magic numbers in the engine. The model is tunable without a rebuild, and bad values fail at startup instead of producing wrong answers.
 - **Risk classifier as a strategy.** Thresholds change more often than the physics, so they sit behind their own interface.
 - **`join fetch` in the repository.** Each event's region loads in the same query, which avoids N+1 selects.
-- **Read-only.** No CRUD. The interesting work is the join and the calculation, and the SQL scripts own the schema.
+- **Read-only.** No CRUD. The interesting work is the join and the calculation.
+- **Flyway owns the schema; Hibernate only validates it.** Versioned migrations run identically on H2 and PostgreSQL, and `ddl-auto=validate` fails startup if an entity drifts from the tables.
+- **H2 by default, PostgreSQL by profile.** Cloning and running needs nothing installed, while the Testcontainers suite proves the same queries work on the production-grade database.
 
 ## Limitations
 
@@ -192,4 +202,4 @@ Red Deer and Fort McMurray come out LOW in both years. The 2026 Edmonton row is 
 - Replace the per-capita constant with hourly load curves, and derate per region by equipment type.
 - Load real climate projections through a separate ingestion module.
 - Cache assessments (the inputs are static) and paginate the endpoint.
-- Make risk thresholds data-driven, and add PostgreSQL via Docker Compose.
+- Make risk thresholds data-driven.
