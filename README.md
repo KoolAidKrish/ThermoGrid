@@ -4,7 +4,7 @@
 
 A read-only Spring Boot service that answers one question: **which regions run out of power under projected heatwaves?**
 
-**Stack:** Java 21 · Spring Boot 3.5 · Spring Data JPA · H2 · JUnit 5 + Mockito · Maven
+**Stack:** Java 21 · Spring Boot 3.5 · Spring Data JPA · H2 · springdoc-openapi · JUnit 5 + Mockito · Maven · Docker
 
 ```bash
 curl "localhost:8080/api/v1/infrastructure/vulnerabilities?targetYear=2035&minRiskLevel=CRITICAL"
@@ -49,7 +49,18 @@ curl "localhost:8080/api/v1/infrastructure/vulnerabilities?minRiskLevel=SEVERE"
 {"type":"about:blank","title":"Bad Request","status":400,"detail":"Invalid value 'SEVERE' for 'minRiskLevel'. Use one of [LOW, MODERATE, HIGH, CRITICAL].","instance":"/api/v1/infrastructure/vulnerabilities"}
 ```
 
-Run the tests with `./mvnw verify` (34 tests: classifier, service, repository, controller slice and end to end).
+Interactive docs are at [localhost:8080/swagger-ui.html](http://localhost:8080/swagger-ui.html), and the OpenAPI spec is at `/v3/api-docs`.
+
+Run the tests with `./mvnw verify` (36 tests: classifier, service, repository, controller slice, end to end and API docs).
+
+### With Docker
+
+No JDK needed. The multi-stage build compiles with the JDK and ships a JRE-only image that runs as a non-root user.
+
+```bash
+docker build -t thermogrid .
+docker run --rm -p 8080:8080 thermogrid
+```
 
 ## API
 
@@ -147,4 +158,4 @@ Red Deer and Fort McMurray come out LOW in both years. The 2026 Edmonton row is 
 - Replace the per-capita constant with hourly load curves, and derate per region by equipment type.
 - Load real climate projections through a separate ingestion module.
 - Cache assessments (the inputs are static) and paginate the endpoint.
-- Make risk thresholds data-driven; add OpenAPI docs, a Dockerfile, a per-region drill-down, and PostgreSQL via Docker Compose.
+- Make risk thresholds data-driven; add a per-region drill-down, and PostgreSQL via Docker Compose.
