@@ -1,6 +1,6 @@
 # ThermoGrid API
 
-[![CI](https://github.com/KoolAidKrish/thermogrid/actions/workflows/ci.yml/badge.svg)](https://github.com/KoolAidKrish/thermogrid/actions/workflows/ci.yml)
+[![CI](https://github.com/KoolAidKrish/ThermoGrid/actions/workflows/ci.yml/badge.svg)](https://github.com/KoolAidKrish/ThermoGrid/actions/workflows/ci.yml)
 
 A read-only Spring Boot service that answers one question: **which regions run out of power under projected heatwaves?**
 
